@@ -167,12 +167,6 @@ if send_mail_flag == "1" and mail_token and mail_token not in st.session_state.s
     st.session_state.sent_tokens.add(mail_token)
     st.query_params.clear()
 
-# Optional debug button (remove after testing)
-with st.expander("Email debug (optional)", expanded=False):
-    if st.button("Send test email now"):
-        sub, body = get_email_content()
-        ok, info = send_mail_from_secrets(sub, body)
-        st.success(info) if ok else st.error(info)
 
 # -----------------------------
 # Interactive UI
@@ -685,3 +679,4 @@ html = r"""
 """
 
 components.html(html, height=1040, scrolling=False)
+
