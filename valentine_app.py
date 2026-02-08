@@ -1,11 +1,14 @@
-import streamlit as st
-import streamlit.components.v1 as components
-import smtplib
 import json
+import smtplib
 import ssl
 from email.message import EmailMessage
 
+import streamlit as st
+import streamlit.components.v1 as components
+
+
 st.set_page_config(page_title="For Pragya 💘", page_icon="💘", layout="wide")
+
 
 # -----------------------------
 # Email content
@@ -57,9 +60,9 @@ def send_mail_from_secrets(subject: str, body: str):
     host = "smtp.gmail.com"
     port = 587
     username = "your@gmail.com"
-    password = "16charapppassword"
+    password = "16charapppassword"   # no spaces
     from_email = "your@gmail.com"
-    to_email = "target@gmail.com"  # or JSON array string
+    to_email = "target@gmail.com"    # or JSON list string
     use_tls = true
     """
     try:
@@ -74,7 +77,6 @@ def send_mail_from_secrets(subject: str, body: str):
     from_email = smtp_cfg.get("from_email", username)
     use_tls = _to_bool(smtp_cfg.get("use_tls", True), default=True)
 
-    # to_email supports string, list, or JSON list string
     to_raw = smtp_cfg.get("to_email", "")
     if isinstance(to_raw, list):
         to_emails = to_raw
@@ -107,7 +109,7 @@ def send_mail_from_secrets(subject: str, body: str):
 
 
 # -----------------------------
-# Global style (remove top bar + outer black frame feel)
+# Global style
 # -----------------------------
 st.markdown(
     """
@@ -142,11 +144,11 @@ st.markdown(
     }
     </style>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
 
 # -----------------------------
-# Send email if YES redirect query params are present
+# Send email if YES redirect params are present
 # -----------------------------
 if "sent_tokens" not in st.session_state:
     st.session_state.sent_tokens = set()
@@ -155,8 +157,8 @@ send_mail_flag = _qp_get("send_mail", "")
 mail_token = _qp_get("mail_token", "")
 
 if send_mail_flag == "1" and mail_token and mail_token not in st.session_state.sent_tokens:
-    sub, body = get_email_content()
-    ok, info = send_mail_from_secrets(sub, body)
+    subject, body = get_email_content()
+    ok, info = send_mail_from_secrets(subject, body)
 
     if ok:
         st.balloons()
@@ -165,7 +167,10 @@ if send_mail_flag == "1" and mail_token and mail_token not in st.session_state.s
         st.error(f"Could not send email: {info}")
 
     st.session_state.sent_tokens.add(mail_token)
-    st.query_params.clear()
+    try:
+        st.query_params.clear()
+    except Exception:
+        pass
 
 
 # -----------------------------
@@ -344,7 +349,7 @@ html = r"""
       font-size: 22px;
       padding: 13px 24px;
       transform: scale(var(--yesScale));
-      z-index: 8; /* YES overlaps */
+      z-index: 8;
     }
 
     .no{
@@ -445,7 +450,7 @@ html = r"""
 
   <script>
     let noClicks = 0;
-    let hoverSwaps = 0; // first 4 hovers swap
+    let hoverSwaps = 0; // first 4 hover swaps
     let accepted = false;
     let yesOnLeft = true;
     let lastHoverTs = 0;
@@ -505,8 +510,7 @@ html = r"""
     }
 
     function noScale(){
-      // shrink starts after 4 NO clicks
-      const shrinkClicks = Math.max(0, noClicks - 4);
+      const shrinkClicks = Math.max(0, noClicks - 4); // shrink starts after 4 NO clicks
       return Math.max(0.20, 1 - (0.16 * shrinkClicks));
     }
 
@@ -559,30 +563,34 @@ html = r"""
       }
     }
 
+    // denser hearts
     setInterval(() => spawnBgHeart(Math.random() < 0.45 ? 2 : 1), 180);
     for (let i = 0; i < 34; i++) setTimeout(() => spawnBgHeart(1), i * 70);
 
-    function triggerMailSend(){
-      const token = Date.now().toString() + "_" + Math.random().toString(36).slice(2, 8);
+    function triggerMailSend() {
+      const token = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-      // Try top first, fallback parent
-      try {
-        const u = new URL(window.top.location.href);
-        u.searchParams.set("send_mail", "1");
-        u.searchParams.set("mail_token", token);
-        window.top.location.href = u.toString();
-        return;
-      } catch (e) {}
+      const base = (document.referrer && document.referrer.startsWith("http"))
+        ? document.referrer
+        : window.location.href;
 
+      let u;
       try {
-        const u = new URL(window.parent.location.href);
-        u.searchParams.set("send_mail", "1");
-        u.searchParams.set("mail_token", token);
-        window.parent.location.href = u.toString();
+        u = new URL(base);
       } catch (e) {
-        // If both fail, do nothing (Python debug button can still test SMTP)
-        console.log("Unable to trigger parent redirect for mail send.", e);
+        return;
       }
+
+      u.searchParams.set("send_mail", "1");
+      u.searchParams.set("mail_token", token);
+      u.searchParams.set("_ts", Date.now().toString());
+
+      const a = document.createElement("a");
+      a.href = u.toString();
+      a.target = "_top";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     }
 
     function render(){
@@ -659,9 +667,7 @@ html = r"""
       accepted = true;
       floatBurst();
       render();
-
-      // Direct call (no timeout) so browser keeps user gesture context
-      triggerMailSend();
+      triggerMailSend(); // direct while user gesture is active
     });
 
     noBtn.addEventListener("click", () => {
@@ -679,4 +685,3 @@ html = r"""
 """
 
 components.html(html, height=1040, scrolling=False)
-
