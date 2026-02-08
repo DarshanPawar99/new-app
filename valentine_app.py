@@ -4,18 +4,14 @@ import ssl
 from email.message import EmailMessage
 
 import streamlit as st
-import streamlit.components.v1 as components
-
 
 st.set_page_config(page_title="For Pragya 💘", page_icon="💘", layout="wide")
 
-
 # -----------------------------
-# Email content
+# Content
 # -----------------------------
-def get_email_content():
-    subject = "Hurray, it’s a date! 💘"
-    body = """Hey Pragya,
+SUBJECT = "Hurray, it’s a date! 💘"
+BODY = """Hey Pragya,
 
 I’m so happy you said yes. 💖
 
@@ -30,9 +26,51 @@ Can’t wait for our date, Winnie 🐻
 Love,
 Bunnu 🐰
 """
-    return subject, body
+
+YES_TEXTS = [
+    "YES 😍",
+    "YES 💘 (do it)",
+    "YES 🥹 (trust me)",
+    "YES ✨ (worth it)",
+    "YES 🫶 (best choice)",
+    "YES 🔥 (final answer)",
+    "YES 😈 u have no choice Pichuuuu",
+    "YES 😈 u have no choice Pichuuuu",
+]
+
+NO_TEXTS = [
+    "NO 🙈",
+    "NO 😬",
+    "NO 😶",
+    "NO 🤡",
+    "NO 😵",
+    "NO 🫠",
+    "NO 😭",
+    "NO ...gone 👻",
+]
+
+TINY_NOTES = [
+    "no pressure... but yes is elite 😌",
+    "Winnie, that YES button looks cute on you",
+    "Billu, destiny keeps pointing to YES",
+    "Pichuu, this is your main-character moment",
+    "every NO powers up YES",
+    "NO is literally shrinking now 👀",
+    "almost out of NO energy",
+    "resistance level = exhausted",
+]
+
+HOVER_TAUNTS = [
+    "you missed it haahaa 😜",
+    "too slowww Winnie 👀",
+    "almost, Billu 😂",
+    "again missed it hehe 🤭",
+]
 
 
+# -----------------------------
+# Email
+# -----------------------------
 def _to_bool(v, default=True):
     if isinstance(v, bool):
         return v
@@ -41,20 +79,9 @@ def _to_bool(v, default=True):
     return default
 
 
-def _qp_get(name: str, default: str = "") -> str:
-    """Safe query-param getter across Streamlit versions."""
-    try:
-        val = st.query_params.get(name, default)
-        if isinstance(val, list):
-            return val[0] if val else default
-        return str(val)
-    except Exception:
-        return default
-
-
 def send_mail_from_secrets(subject: str, body: str):
     """
-    Expects Streamlit secrets:
+    Requires Streamlit secrets:
 
     [smtp]
     host = "smtp.gmail.com"
@@ -72,20 +99,23 @@ def send_mail_from_secrets(subject: str, body: str):
 
     host = smtp_cfg.get("host", "smtp.gmail.com")
     port = int(smtp_cfg.get("port", 587))
-    username = smtp_cfg.get("username", "")
-    password = smtp_cfg.get("password", "")
-    from_email = smtp_cfg.get("from_email", username)
+    username = smtp_cfg.get("username", "").strip()
+    password = smtp_cfg.get("password", "").replace(" ", "").strip()  # tolerate accidental spaces
+    from_email = smtp_cfg.get("from_email", username).strip()
     use_tls = _to_bool(smtp_cfg.get("use_tls", True), default=True)
 
     to_raw = smtp_cfg.get("to_email", "")
     if isinstance(to_raw, list):
-        to_emails = to_raw
+        to_emails = [str(x).strip() for x in to_raw if str(x).strip()]
     elif isinstance(to_raw, str) and to_raw.strip().startswith("["):
-        to_emails = json.loads(to_raw)
+        to_emails = [str(x).strip() for x in json.loads(to_raw) if str(x).strip()]
     elif isinstance(to_raw, str) and to_raw.strip():
         to_emails = [to_raw.strip()]
     else:
         return False, "to_email is missing in secrets."
+
+    if not username or not password:
+        return False, "SMTP username/password missing."
 
     msg = EmailMessage()
     msg["Subject"] = subject
@@ -103,585 +133,304 @@ def send_mail_from_secrets(subject: str, body: str):
             server.send_message(msg)
         return True, f"Email sent to {', '.join(to_emails)}"
     except smtplib.SMTPAuthenticationError as e:
-        return False, f"SMTP auth failed (check App Password / 2FA): {e}"
+        return False, f"SMTP auth failed: {e}"
     except Exception as e:
         return False, f"SMTP error: {e}"
 
 
 # -----------------------------
-# Global style
+# Session state
+# -----------------------------
+defaults = {
+    "no_clicks": 0,
+    "note_step": 0,
+    "swap_count": 0,      # first 4 swaps
+    "yes_left": True,
+    "accepted": False,
+    "mail_sent": False,
+    "mail_info": "",
+    "last_taunt": "",
+}
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
+
+
+# -----------------------------
+# Styling
 # -----------------------------
 st.markdown(
     """
     <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    [data-testid="stHeader"] {display: none;}
-    [data-testid="stToolbar"] {display: none;}
+      #MainMenu {visibility: hidden;}
+      footer {visibility: hidden;}
+      [data-testid="stHeader"] {display: none;}
+      [data-testid="stToolbar"] {display: none;}
 
-    .stApp {
+      .stApp{
         background: linear-gradient(-45deg,#ff4d6d,#ff8fa3,#a78bfa,#60a5fa,#34d399,#f59e0b);
         background-size: 400% 400%;
-        animation: appBgMove 14s ease infinite;
-    }
+        animation: bgMove 14s ease infinite;
+      }
 
-    @keyframes appBgMove{
-      0% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
-      100% { background-position: 0% 50%; }
-    }
+      @keyframes bgMove{
+        0%{background-position:0% 50%}
+        50%{background-position:100% 50%}
+        100%{background-position:0% 50%}
+      }
 
-    .block-container{
-        max-width: 100% !important;
-        padding-top: 0.2rem !important;
-        padding-bottom: 0.4rem !important;
-    }
+      .block-container{
+        max-width: 1100px !important;
+        padding-top: 0.4rem !important;
+        padding-bottom: 1rem !important;
+      }
 
-    iframe[title="streamlit_components.v1.html"]{
-        border: none !important;
-        border-radius: 12px !important;
-        background: transparent !important;
-    }
+      .hero-title{
+        text-align:center;
+        color:#fff;
+        font-weight:900;
+        font-size: clamp(34px, 4vw, 56px);
+        margin: 0 0 8px 0;
+        text-shadow: 0 3px 14px rgba(0,0,0,.25);
+      }
+
+      .glass-card{
+        background: rgba(255,255,255,.20);
+        border:1px solid rgba(255,255,255,.34);
+        backdrop-filter: blur(8px);
+        border-radius: 18px;
+        box-shadow: 0 3px 8px rgba(0,0,0,.08);
+        padding: 10px;
+      }
+
+      .letter{
+        background: rgba(255,255,255,.94);
+        border-radius: 14px;
+        padding: 20px 22px;
+        color: #2e2030;
+        line-height: 1.58;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,.8);
+      }
+
+      .letter h2{
+        margin:0 0 10px 0;
+        color:#7a1f4f;
+        font-size: clamp(24px,2.2vw,34px);
+      }
+
+      .letter p{
+        margin:0 0 9px 0;
+        font-size: 17px;
+      }
+
+      .sign{
+        margin-top: 10px;
+        font-weight: 700;
+        color:#6a2148;
+        font-size: 17px;
+      }
+
+      .status{
+        margin-top:12px;
+        text-align:center;
+        color:#fff;
+        font-weight:800;
+        font-size: clamp(16px,1.8vw,24px);
+        text-shadow: 0 2px 8px rgba(0,0,0,.25);
+      }
+
+      .tiny{
+        text-align:center;
+        color:#000;
+        font-size:12px;
+        font-weight:700;
+        margin-top: 4px;
+        background: rgba(255,255,255,.70);
+        display:inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        position: relative;
+        left: 50%;
+        transform: translateX(-50%);
+      }
+
+      /* Buttons */
+      div[data-testid="stButton"] > button {
+        border-radius: 16px !important;
+        font-weight: 900 !important;
+        border: 0 !important;
+        min-height: 52px !important;
+      }
+
+      /* Floating hearts */
+      .hearts{
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+        overflow: hidden;
+      }
+
+      .hearts span{
+        position: absolute;
+        animation: floatUp var(--d) ease-in infinite;
+        opacity: .75;
+        filter: drop-shadow(0 2px 4px rgba(0,0,0,.15));
+        user-select: none;
+      }
+
+      @keyframes floatUp{
+        0%   { transform: translateY(8vh) scale(.65); opacity: 0; }
+        12%  { opacity: .95; }
+        90%  { opacity: .75; }
+        100% { transform: translateY(-110vh) scale(1.2); opacity: 0; }
+      }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# -----------------------------
-# Send email if YES redirect params are present
-# -----------------------------
-if "sent_tokens" not in st.session_state:
-    st.session_state.sent_tokens = set()
-
-send_mail_flag = _qp_get("send_mail", "")
-mail_token = _qp_get("mail_token", "")
-
-if send_mail_flag == "1" and mail_token and mail_token not in st.session_state.sent_tokens:
-    subject, body = get_email_content()
-    ok, info = send_mail_from_secrets(subject, body)
-
-    if ok:
-        st.balloons()
-        st.success("Yay! Email sent successfully 💌")
-    else:
-        st.error(f"Could not send email: {info}")
-
-    st.session_state.sent_tokens.add(mail_token)
-    try:
-        st.query_params.clear()
-    except Exception:
-        pass
-
+# hearts background
+hearts_html = """
+<div class="hearts">
+  <span style="left:3%; top:92%; font-size:14px; --d:10s;">💖</span>
+  <span style="left:10%; top:98%; font-size:18px; --d:13s;">💘</span>
+  <span style="left:18%; top:96%; font-size:12px; --d:9s;">💕</span>
+  <span style="left:26%; top:99%; font-size:17px; --d:12s;">💓</span>
+  <span style="left:34%; top:95%; font-size:13px; --d:11s;">💗</span>
+  <span style="left:42%; top:98%; font-size:20px; --d:14s;">💝</span>
+  <span style="left:50%; top:97%; font-size:15px; --d:10.5s;">🫶</span>
+  <span style="left:58%; top:99%; font-size:16px; --d:12.5s;">💞</span>
+  <span style="left:66%; top:96%; font-size:13px; --d:9.5s;">💖</span>
+  <span style="left:74%; top:98%; font-size:19px; --d:13.5s;">💘</span>
+  <span style="left:82%; top:95%; font-size:14px; --d:11.5s;">💕</span>
+  <span style="left:90%; top:97%; font-size:18px; --d:12s;">💗</span>
+  <span style="left:96%; top:99%; font-size:12px; --d:9.8s;">💓</span>
+</div>
+"""
+st.markdown(hearts_html, unsafe_allow_html=True)
 
 # -----------------------------
-# Interactive UI
+# Header + Letter
 # -----------------------------
-html = r"""
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    :root{
-      --yesScale: 1;
-      --noScale: 1;
-    }
+st.markdown('<div class="hero-title">Will you be my Valentine, Pragya? 💘</div>', unsafe_allow_html=True)
 
-    * { box-sizing: border-box; }
-
-    body{
-      margin:0;
-      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      background: transparent;
-      min-height: 100vh;
-      padding: 12px 10px 10px;
-      display:flex;
-      align-items:flex-start;
-      justify-content:center;
-      overflow-x: hidden;
-    }
-
-    .bg-hearts{
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 0;
-      overflow: hidden;
-    }
-
-    .bg-heart{
-      position: absolute;
-      opacity: 0;
-      animation: heartFade var(--dur, 2800ms) ease-in-out forwards;
-      filter: drop-shadow(0 2px 4px rgba(0,0,0,.12));
-      user-select: none;
-      will-change: transform, opacity;
-    }
-
-    @keyframes heartFade{
-      0%   { transform: translateY(8px) scale(.6); opacity: 0; }
-      12%  { opacity: .95; }
-      70%  { opacity: .78; }
-      100% { transform: translateY(-20px) scale(1.15); opacity: 0; }
-    }
-
-    .wrap{
-      width:min(1140px, 92vw);
-      position: relative;
-      z-index: 2;
-      margin-top: 2px;
-    }
-
-    .hero{
-      text-align:center;
-      color:#fff;
-      font-weight:900;
-      font-size: clamp(34px, 4vw, 58px);
-      text-shadow:0 3px 12px rgba(0,0,0,.20);
-      margin: 0 0 8px;
-    }
-
-    .card{
-      background: rgba(255,255,255,.20);
-      border:1px solid rgba(255,255,255,.32);
-      backdrop-filter: blur(8px);
-      border-radius: 18px;
-      box-shadow: 0 3px 8px rgba(0,0,0,.08);
-      padding: 10px;
-      overflow: visible;
-    }
-
-    .letter{
-      background: rgba(255,255,255,.94);
-      border-radius: 14px;
-      padding: 22px 24px;
-      color:#2e2030;
-      line-height:1.62;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,.78);
-      max-width: 1080px;
-      margin: 0 auto;
-    }
-
-    .letter h2{
-      margin:0 0 10px;
-      font-size: clamp(24px, 2.2vw, 34px);
-      color:#7a1f4f;
-    }
-
-    .letter p{
-      margin: 0 0 10px;
-      font-size: 17px;
-    }
-
-    .sign{
-      margin-top: 10px;
-      font-weight: 700;
-      color:#6a2148;
-      font-size: 17px;
-    }
-
-    .status{
-      margin-top: 12px;
-      text-align:center;
-      color:#fff;
-      font-weight:800;
-      font-size: clamp(16px, 1.8vw, 24px);
-      text-shadow:0 2px 8px rgba(0,0,0,.22);
-      min-height: 34px;
-    }
-
-    .tiny-meme{
-      text-align:center;
-      color:#000;
-      opacity:1;
-      font-size:12px;
-      font-weight:700;
-      margin-top: 4px;
-      min-height: 18px;
-      letter-spacing:.15px;
-      background: rgba(255,255,255,.68);
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 10px;
-      position: relative;
-      left: 50%;
-      transform: translateX(-50%);
-    }
-
-    .row{
-      margin-top: 14px;
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      align-items:center;
-      min-height: 100px;
-      position: relative;
-      overflow: visible;
-    }
-
-    .row.solo{
-      grid-template-columns: 1fr;
-      max-width: 740px;
-      margin: 14px auto 0 auto;
-    }
-
-    .btn{
-      border:0;
-      border-radius:16px;
-      width:100%;
-      color:#fff;
-      font-weight:900;
-      cursor:pointer;
-      box-shadow:0 8px 18px rgba(0,0,0,.18);
-      transition: all .22s ease;
-      transform-origin:center center;
-      user-select:none;
-      position: relative;
-      white-space: normal;
-      word-break: break-word;
-      text-align: center;
-      line-height: 1.2;
-    }
-
-    .yes{
-      background: linear-gradient(135deg,#ff2d95,#ff5e3a,#ffcc00);
-      font-size: 22px;
-      padding: 13px 24px;
-      transform: scale(var(--yesScale));
-      z-index: 8;
-    }
-
-    .no{
-      background: linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899);
-      font-size: 22px;
-      padding: 13px 24px;
-      transform: scale(var(--noScale));
-      opacity: calc(.20 + (var(--noScale) * .80));
-      z-index: 3;
-    }
-
-    .hide{ display:none !important; }
-
-    .celebrate{
-      margin-top: 8px;
-      text-align:center;
-      color:#fff;
-      font-weight:900;
-      font-size: clamp(20px, 2.2vw, 32px);
-      text-shadow:0 3px 10px rgba(0,0,0,.22);
-      min-height: 38px;
-    }
-
-    .float-area{
-      pointer-events:none;
-      position:fixed;
-      inset:0;
-      overflow:hidden;
-      z-index:10;
-    }
-
-    .float{
-      position:absolute;
-      font-size: 26px;
-      animation: fly 1.8s ease-out forwards;
-      filter: drop-shadow(0 4px 8px rgba(0,0,0,.2));
-      user-select:none;
-    }
-
-    @keyframes fly{
-      0%   { transform: translateY(30px) scale(.7); opacity:0; }
-      10%  { opacity:1; }
-      100% { transform: translateY(-110vh) scale(1.2); opacity:0; }
-    }
-
-    @media (max-width: 900px){
-      body{ padding-top: 10px; }
-      .row{ grid-template-columns: 1fr; }
-      .row.solo{ max-width: 100%; }
-      .letter{ max-width: 100%; }
-      .wrap{ width:min(1140px, 95vw); }
-    }
-  </style>
-</head>
-<body>
-  <div class="bg-hearts" id="bgHearts"></div>
-
-  <div class="wrap">
-    <div class="hero">Will you be my Valentine, Pragya? 💘</div>
-
-    <div class="card">
+st.markdown(
+    """
+    <div class="glass-card">
       <div class="letter">
         <h2>Hey Pragya,</h2>
-        <p>
-          I’ll keep this simple — you’re genuinely amazing.
-          Your big bright eyes, your beautiful voice, and your goated personality... all of it is unreal.
-          Even your cute anger (that wannabe toxic mode 😌) is somehow adorable.
-        </p>
-        <p>
-          You make me feel calm and relaxed, like the whole world goes quiet.
-          The warmth of your hand, your tight hugs, and the fragrance of your hair... uff.
-          Everything about you makes me go a little crazy (in the best way).
-        </p>
-        <p>
-          Bonus points: you’re funny, cute, smart, diligent, and hot.
-          How is all that in one person?
-          Also yes — my favorite thing is your nose XD.
-        </p>
-        <p>
-          I’d be the luckiest guy if I could make you mine forever.
-        </p>
+        <p>I’ll keep this simple — you’re genuinely amazing.
+        Your big bright eyes, your beautiful voice, and your goated personality... all of it is unreal.
+        Even your cute anger (that wannabe toxic mode 😌) is somehow adorable.</p>
+
+        <p>You make me feel calm and relaxed, like the whole world goes quiet.
+        The warmth of your hand, your tight hugs, and the fragrance of your hair... uff.
+        Everything about you makes me go a little crazy (in the best way).</p>
+
+        <p>Bonus points: you’re funny, cute, smart, diligent, and hot.
+        How is all that in one person?
+        Also yes — my favorite thing is your nose XD.</p>
+
+        <p>I’d be the luckiest guy if I could make you mine forever.</p>
+
         <div class="sign">— Yours, hoping for a YES 💌</div>
       </div>
-
-      <div id="status" class="status">Pick one, Winnie 😏</div>
-      <div id="tinyMeme" class="tiny-meme">yes = premium happiness</div>
-
-      <div id="row" class="row">
-        <button id="yesBtn" class="btn yes">YES 😍</button>
-        <button id="noBtn"  class="btn no">NO 🙈</button>
-      </div>
-
-      <div id="celebrate" class="celebrate"></div>
     </div>
-  </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-  <div id="floatArea" class="float-area"></div>
+# -----------------------------
+# Status text
+# -----------------------------
+no_clicks = st.session_state.no_clicks
+note_step = min(st.session_state.note_step, len(TINY_NOTES) - 1)
+yes_label = YES_TEXTS[min(no_clicks, len(YES_TEXTS) - 1)]
+no_label = NO_TEXTS[min(no_clicks, len(NO_TEXTS) - 1)]
 
-  <script>
-    let noClicks = 0;
-    let hoverSwaps = 0; // first 4 hover swaps
-    let accepted = false;
-    let yesOnLeft = true;
-    let lastHoverTs = 0;
-    let hoverTaunt = "";
-    let noteStep = 0;
+if st.session_state.accepted:
+    status_text = "You chose YES. Best decision ever 🤝💖"
+    tiny_text = "she said YES and my heart did cartwheels"
+elif no_clicks >= 7:
+    status_text = "NO vanished... looks like fate picked YES 😌"
+    tiny_text = "resistance level = exhausted"
+elif no_clicks < 4:
+    status_text = "Pick one, Winnie 😏"
+    tiny_text = st.session_state.last_taunt or TINY_NOTES[note_step]
+else:
+    status_text = "Every NO just makes YES stronger 💪💘"
+    tiny_text = st.session_state.last_taunt or TINY_NOTES[note_step]
 
-    const yesBtn = document.getElementById("yesBtn");
-    const noBtn = document.getElementById("noBtn");
-    const row = document.getElementById("row");
-    const status = document.getElementById("status");
-    const tinyMeme = document.getElementById("tinyMeme");
-    const celebrate = document.getElementById("celebrate");
-    const floatArea = document.getElementById("floatArea");
-    const bgHearts = document.getElementById("bgHearts");
+st.markdown(f'<div class="status">{status_text}</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="tiny">{tiny_text}</div>', unsafe_allow_html=True)
+st.write("")
 
-    const yesTexts = [
-      "YES 😍",
-      "YES 💘 (do it)",
-      "YES 🥹 (trust me)",
-      "YES ✨ (worth it)",
-      "YES 🫶 (best choice)",
-      "YES 🔥 (final answer)",
-      "YES 😈 u have no choice Pichuuuu"
-    ];
+# -----------------------------
+# Buttons (native Streamlit -> reliable mail sending)
+# -----------------------------
+yes_clicked = False
+no_clicked = False
 
-    const noTexts = [
-      "NO 🙈",
-      "NO 😬",
-      "NO 😶",
-      "NO 🤡",
-      "NO 😵",
-      "NO 🫠",
-      "NO 😭",
-      "NO ...gone 👻"
-    ];
+# yes grows, no shrinks by layout ratio
+yes_w = min(9, 3 + no_clicks)      # grows
+no_w = max(1, 7 - no_clicks)       # shrinks
 
-    const tinyNotes = [
-      "no pressure... but yes is elite 😌",
-      "Winnie, that YES button looks cute on you",
-      "Billu, destiny keeps pointing to YES",
-      "Pichuu, this is your main-character moment",
-      "every NO powers up YES",
-      "NO is literally shrinking now 👀",
-      "almost out of NO energy",
-      "resistance level = exhausted"
-    ];
+if st.session_state.accepted or no_clicks >= 7:
+    c1, c2, c3 = st.columns([1, 3, 1])
+    with c2:
+        yes_clicked = st.button(yes_label, key="yes_btn", type="primary", use_container_width=True)
+else:
+    # first 4 "movement" swaps position each NO click
+    left_is_yes = st.session_state.yes_left
 
-    const hoverTaunts = [
-      "you missed it haahaa 😜",
-      "too slowww Winnie 👀",
-      "almost, Billu 😂",
-      "again missed it hehe 🤭"
-    ];
+    if left_is_yes:
+        c_left, c_right = st.columns([yes_w, no_w])
+        with c_left:
+            yes_clicked = st.button(yes_label, key="yes_btn", type="primary", use_container_width=True)
+        with c_right:
+            no_clicked = st.button(no_label, key="no_btn", use_container_width=True)
+    else:
+        c_left, c_right = st.columns([no_w, yes_w])
+        with c_left:
+            no_clicked = st.button(no_label, key="no_btn", use_container_width=True)
+        with c_right:
+            yes_clicked = st.button(yes_label, key="yes_btn", type="primary", use_container_width=True)
 
-    function yesScale(){
-      return Math.min(2.0, 1 + (0.16 * noClicks));
-    }
+# -----------------------------
+# Click actions
+# -----------------------------
+if no_clicked and not st.session_state.accepted:
+    st.session_state.no_clicks = min(7, st.session_state.no_clicks + 1)
+    st.session_state.note_step = min(len(TINY_NOTES) - 1, st.session_state.note_step + 1)
 
-    function noScale(){
-      const shrinkClicks = Math.max(0, noClicks - 4); // shrink starts after 4 NO clicks
-      return Math.max(0.20, 1 - (0.16 * shrinkClicks));
-    }
+    # swap first 4 times (hover-like movement simulation)
+    if st.session_state.swap_count < 4:
+        st.session_state.yes_left = not st.session_state.yes_left
+        st.session_state.last_taunt = HOVER_TAUNTS[st.session_state.swap_count]
+        st.session_state.swap_count += 1
+    else:
+        st.session_state.last_taunt = ""
 
-    function swapPositions(){
-      row.innerHTML = "";
-      if (yesOnLeft){
-        row.appendChild(noBtn);
-        row.appendChild(yesBtn);
-      } else {
-        row.appendChild(yesBtn);
-        row.appendChild(noBtn);
-      }
-      yesOnLeft = !yesOnLeft;
-    }
+    st.rerun()
 
-    function floatBurst() {
-      const icons = ["🎈","💖","💘","✨","🥳","💕"];
-      for (let i = 0; i < 28; i++) {
-        const el = document.createElement("div");
-        el.className = "float";
-        el.textContent = icons[Math.floor(Math.random() * icons.length)];
-        el.style.left = (Math.random() * 100) + "vw";
-        el.style.bottom = "-20px";
-        el.style.animationDelay = (Math.random() * 0.35) + "s";
-        el.style.fontSize = (18 + Math.random() * 22) + "px";
-        floatArea.appendChild(el);
-        setTimeout(() => el.remove(), 2200);
-      }
-    }
+if yes_clicked:
+    st.session_state.accepted = True
+    st.session_state.last_taunt = ""
 
-    function spawnBgHeart(batchSize = 1){
-      const hearts = ["💖","💘","💕","💓","💗","🫶","💞","💝"];
-      for (let i = 0; i < batchSize; i++){
-        const h = document.createElement("span");
-        h.className = "bg-heart";
-        h.textContent = hearts[Math.floor(Math.random() * hearts.length)];
+    if not st.session_state.mail_sent:
+        ok, info = send_mail_from_secrets(SUBJECT, BODY)
+        st.session_state.mail_sent = ok
+        st.session_state.mail_info = info
 
-        const left = Math.random() * 100;
-        const top = Math.random() * 100;
-        const size = 10 + Math.random() * 16;
-        const dur = 1900 + Math.random() * 2200;
+    st.balloons()
+    st.rerun()
 
-        h.style.left = left + "vw";
-        h.style.top = top + "vh";
-        h.style.fontSize = size + "px";
-        h.style.setProperty("--dur", dur + "ms");
-
-        bgHearts.appendChild(h);
-        setTimeout(() => h.remove(), dur + 120);
-      }
-    }
-
-    // denser hearts
-    setInterval(() => spawnBgHeart(Math.random() < 0.45 ? 2 : 1), 180);
-    for (let i = 0; i < 34; i++) setTimeout(() => spawnBgHeart(1), i * 70);
-
-    function triggerMailSend() {
-      const token = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-      const base = (document.referrer && document.referrer.startsWith("http"))
-        ? document.referrer
-        : window.location.href;
-
-      let u;
-      try {
-        u = new URL(base);
-      } catch (e) {
-        return;
-      }
-
-      u.searchParams.set("send_mail", "1");
-      u.searchParams.set("mail_token", token);
-      u.searchParams.set("_ts", Date.now().toString());
-
-      const a = document.createElement("a");
-      a.href = u.toString();
-      a.target = "_top";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    }
-
-    function render(){
-      document.documentElement.style.setProperty("--yesScale", String(yesScale()));
-      document.documentElement.style.setProperty("--noScale", String(noScale()));
-
-      yesBtn.textContent = yesTexts[Math.min(noClicks, yesTexts.length - 1)];
-      noBtn.textContent = noTexts[Math.min(noClicks, noTexts.length - 1)];
-
-      const noGone = (noClicks >= 7 || accepted);
-
-      if (noGone){
-        noBtn.classList.add("hide");
-        row.classList.add("solo");
-        if (row.children.length !== 1 || row.children[0] !== yesBtn){
-          row.innerHTML = "";
-          row.appendChild(yesBtn);
-        }
-      } else {
-        noBtn.classList.remove("hide");
-        row.classList.remove("solo");
-
-        row.innerHTML = "";
-        if (yesOnLeft){
-          row.appendChild(yesBtn);
-          row.appendChild(noBtn);
-        } else {
-          row.appendChild(noBtn);
-          row.appendChild(yesBtn);
-        }
-      }
-
-      if (accepted){
-        status.textContent = "You chose YES. Best decision ever 🤝💖";
-        tinyMeme.textContent = "she said YES and my heart did cartwheels";
-        celebrate.textContent = "Woooo! Valentine locked in 🥰";
-      } else if (noClicks >= 7){
-        status.textContent = "NO vanished... looks like fate picked YES 😌";
-        tinyMeme.textContent = "resistance level = exhausted";
-        celebrate.textContent = "";
-      } else if (noClicks < 4){
-        status.textContent = "Pick one, Winnie 😏";
-        tinyMeme.textContent = hoverTaunt || tinyNotes[Math.min(noteStep, tinyNotes.length - 1)];
-        celebrate.textContent = "";
-      } else {
-        status.textContent = "Every NO just makes YES stronger 💪💘";
-        tinyMeme.textContent = hoverTaunt || tinyNotes[Math.min(noteStep, tinyNotes.length - 1)];
-        celebrate.textContent = "";
-      }
-    }
-
-    // Hover swap first 4 times
-    noBtn.addEventListener("mouseenter", () => {
-      if (accepted || noClicks >= 7) return;
-      if (hoverSwaps >= 4) return;
-
-      const now = Date.now();
-      if (now - lastHoverTs < 120) return;
-      lastHoverTs = now;
-
-      swapPositions();
-      hoverTaunt = hoverTaunts[Math.min(hoverSwaps, hoverTaunts.length - 1)];
-      hoverSwaps += 1;
-      noteStep = Math.min(noteStep + 1, tinyNotes.length - 1);
-      render();
-
-      setTimeout(() => {
-        hoverTaunt = "";
-        render();
-      }, 1300);
-    });
-
-    yesBtn.addEventListener("click", () => {
-      accepted = true;
-      floatBurst();
-      render();
-      triggerMailSend(); // direct while user gesture is active
-    });
-
-    noBtn.addEventListener("click", () => {
-      if (accepted || noClicks >= 7) return;
-      noClicks += 1;
-      noteStep = Math.min(noteStep + 1, tinyNotes.length - 1);
-      hoverTaunt = "";
-      render();
-    });
-
-    render();
-  </script>
-</body>
-</html>
-"""
-
-components.html(html, height=1040, scrolling=False)
+# -----------------------------
+# Mail result info
+# -----------------------------
+if st.session_state.accepted:
+    if st.session_state.mail_sent:
+        st.success("Yay! Email sent successfully 💌")
+    elif st.session_state.mail_info:
+        st.error(f"Could not send email: {st.session_state.mail_info}")
