@@ -2,13 +2,13 @@ import streamlit as st
 import streamlit.components.v1 as components
 import smtplib
 import json
-from email.message import EmailMessage
 import ssl
+from email.message import EmailMessage
 
 st.set_page_config(page_title="For Pragya 💘", page_icon="💘", layout="wide")
 
 # -----------------------------
-# Email helpers
+# Email content
 # -----------------------------
 def get_email_content():
     subject = "Hurray, it’s a date! 💘"
@@ -16,10 +16,10 @@ def get_email_content():
 
 I’m so happy you said yes. 💖
 
-I’m really sorry because of a sudden plan, I won’t be able to take you out on the 14th.
+I’m really sorry — because of a sudden plan, I won’t be able to take you out on the 14th.
 Can we make it 15 Feb instead?
 
-I want to take you on a date and do something you’ve wanted to try for sometime.
+I want to take you on a date and do something you’ve wanted to try for sometime — your choice.
 I’m really glad you said yes.
 
 Can’t wait for our date, Winnie 🐻
@@ -38,15 +38,34 @@ def _to_bool(v, default=True):
     return default
 
 
+def _qp_get(name: str, default: str = "") -> str:
+    """Safe query-param getter across Streamlit versions."""
+    try:
+        val = st.query_params.get(name, default)
+        if isinstance(val, list):
+            return val[0] if val else default
+        return str(val)
+    except Exception:
+        return default
+
+
 def send_mail_from_secrets(subject: str, body: str):
     """
-    Expects st.secrets.smtp:
-      host, port, username, password, from_email, to_email, use_tls
+    Expects Streamlit secrets:
+
+    [smtp]
+    host = "smtp.gmail.com"
+    port = 587
+    username = "your@gmail.com"
+    password = "16charapppassword"
+    from_email = "your@gmail.com"
+    to_email = "target@gmail.com"  # or JSON array string
+    use_tls = true
     """
     try:
         smtp_cfg = st.secrets["smtp"]
     except Exception:
-        return False, "Missing [smtp] in secrets.toml"
+        return False, "Missing [smtp] in Streamlit secrets."
 
     host = smtp_cfg.get("host", "smtp.gmail.com")
     port = int(smtp_cfg.get("port", 587))
@@ -55,6 +74,7 @@ def send_mail_from_secrets(subject: str, body: str):
     from_email = smtp_cfg.get("from_email", username)
     use_tls = _to_bool(smtp_cfg.get("use_tls", True), default=True)
 
+    # to_email supports string, list, or JSON list string
     to_raw = smtp_cfg.get("to_email", "")
     if isinstance(to_raw, list):
         to_emails = to_raw
@@ -63,7 +83,7 @@ def send_mail_from_secrets(subject: str, body: str):
     elif isinstance(to_raw, str) and to_raw.strip():
         to_emails = [to_raw.strip()]
     else:
-        return False, "to_email is missing in secrets.toml"
+        return False, "to_email is missing in secrets."
 
     msg = EmailMessage()
     msg["Subject"] = subject
@@ -73,18 +93,21 @@ def send_mail_from_secrets(subject: str, body: str):
 
     try:
         with smtplib.SMTP(host, port, timeout=30) as server:
+            server.ehlo()
             if use_tls:
                 server.starttls(context=ssl.create_default_context())
-            if username:
-                server.login(username, password)
+                server.ehlo()
+            server.login(username, password)
             server.send_message(msg)
         return True, f"Email sent to {', '.join(to_emails)}"
+    except smtplib.SMTPAuthenticationError as e:
+        return False, f"SMTP auth failed (check App Password / 2FA): {e}"
     except Exception as e:
         return False, f"SMTP error: {e}"
 
 
 # -----------------------------
-# Global page style (remove black frame)
+# Global style (remove top bar + outer black frame feel)
 # -----------------------------
 st.markdown(
     """
@@ -123,14 +146,13 @@ st.markdown(
 )
 
 # -----------------------------
-# Prevent duplicate sends
+# Send email if YES redirect query params are present
 # -----------------------------
 if "sent_tokens" not in st.session_state:
     st.session_state.sent_tokens = set()
 
-qp = st.query_params
-send_mail_flag = qp.get("send_mail", "")
-mail_token = qp.get("mail_token", "")
+send_mail_flag = _qp_get("send_mail", "")
+mail_token = _qp_get("mail_token", "")
 
 if send_mail_flag == "1" and mail_token and mail_token not in st.session_state.sent_tokens:
     sub, body = get_email_content()
@@ -144,6 +166,13 @@ if send_mail_flag == "1" and mail_token and mail_token not in st.session_state.s
 
     st.session_state.sent_tokens.add(mail_token)
     st.query_params.clear()
+
+# Optional debug button (remove after testing)
+with st.expander("Email debug (optional)", expanded=False):
+    if st.button("Send test email now"):
+        sub, body = get_email_content()
+        ok, info = send_mail_from_secrets(sub, body)
+        st.success(info) if ok else st.error(info)
 
 # -----------------------------
 # Interactive UI
@@ -165,7 +194,7 @@ html = r"""
     body{
       margin:0;
       font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      background: transparent; /* use Streamlit gradient */
+      background: transparent;
       min-height: 100vh;
       padding: 12px 10px 10px;
       display:flex;
@@ -219,7 +248,7 @@ html = r"""
       border:1px solid rgba(255,255,255,.32);
       backdrop-filter: blur(8px);
       border-radius: 18px;
-      box-shadow: 0 3px 8px rgba(0,0,0,.08);  /* softer frame */
+      box-shadow: 0 3px 8px rgba(0,0,0,.08);
       padding: 10px;
       overflow: visible;
     }
@@ -316,13 +345,12 @@ html = r"""
       line-height: 1.2;
     }
 
-    /* YES overlaps on growth */
     .yes{
       background: linear-gradient(135deg,#ff2d95,#ff5e3a,#ffcc00);
       font-size: 22px;
       padding: 13px 24px;
       transform: scale(var(--yesScale));
-      z-index: 8;
+      z-index: 8; /* YES overlaps */
     }
 
     .no{
@@ -399,7 +427,7 @@ html = r"""
         <p>
           Bonus points: you’re funny, cute, smart, diligent, and hot.
           How is all that in one person?
-          Also yes, my favorite thing is your nose so I'm going to continue to keep pulling it and also annoy you 😏 XD.
+          Also yes — my favorite thing is your nose XD.
         </p>
         <p>
           I’d be the luckiest guy if I could make you mine forever.
@@ -423,7 +451,7 @@ html = r"""
 
   <script>
     let noClicks = 0;
-    let hoverSwaps = 0;
+    let hoverSwaps = 0; // first 4 hovers swap
     let accepted = false;
     let yesOnLeft = true;
     let lastHoverTs = 0;
@@ -483,6 +511,7 @@ html = r"""
     }
 
     function noScale(){
+      // shrink starts after 4 NO clicks
       const shrinkClicks = Math.max(0, noClicks - 4);
       return Math.max(0.20, 1 - (0.16 * shrinkClicks));
     }
@@ -540,10 +569,26 @@ html = r"""
     for (let i = 0; i < 34; i++) setTimeout(() => spawnBgHeart(1), i * 70);
 
     function triggerMailSend(){
-      const url = new URL(window.top.location.href);
-      url.searchParams.set("send_mail", "1");
-      url.searchParams.set("mail_token", Date.now().toString());
-      window.top.location.href = url.toString();
+      const token = Date.now().toString() + "_" + Math.random().toString(36).slice(2, 8);
+
+      // Try top first, fallback parent
+      try {
+        const u = new URL(window.top.location.href);
+        u.searchParams.set("send_mail", "1");
+        u.searchParams.set("mail_token", token);
+        window.top.location.href = u.toString();
+        return;
+      } catch (e) {}
+
+      try {
+        const u = new URL(window.parent.location.href);
+        u.searchParams.set("send_mail", "1");
+        u.searchParams.set("mail_token", token);
+        window.parent.location.href = u.toString();
+      } catch (e) {
+        // If both fail, do nothing (Python debug button can still test SMTP)
+        console.log("Unable to trigger parent redirect for mail send.", e);
+      }
     }
 
     function render(){
@@ -595,6 +640,7 @@ html = r"""
       }
     }
 
+    // Hover swap first 4 times
     noBtn.addEventListener("mouseenter", () => {
       if (accepted || noClicks >= 7) return;
       if (hoverSwaps >= 4) return;
@@ -606,7 +652,6 @@ html = r"""
       swapPositions();
       hoverTaunt = hoverTaunts[Math.min(hoverSwaps, hoverTaunts.length - 1)];
       hoverSwaps += 1;
-
       noteStep = Math.min(noteStep + 1, tinyNotes.length - 1);
       render();
 
@@ -621,9 +666,8 @@ html = r"""
       floatBurst();
       render();
 
-      setTimeout(() => {
-        triggerMailSend();
-      }, 400);
+      // Direct call (no timeout) so browser keeps user gesture context
+      triggerMailSend();
     });
 
     noBtn.addEventListener("click", () => {
@@ -640,4 +684,4 @@ html = r"""
 </html>
 """
 
-components.html(html, height=980, scrolling=False)
+components.html(html, height=1040, scrolling=False)
