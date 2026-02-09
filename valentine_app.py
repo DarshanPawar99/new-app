@@ -40,27 +40,22 @@ def _to_bool(v, default=True):
     return default
 
 
-def _qp_get(name: str, default: str = "") -> str:
-    try:
-        val = st.query_params.get(name, default)
-        if isinstance(val, list):
-            return val[0] if val else default
-        return str(val)
-    except Exception:
-        return default
+def _normalize_app_password(pw: str) -> str:
+    # Gmail app password is 16 chars; users often paste with spaces.
+    return "".join(str(pw).split())
 
 
 def send_mail_from_secrets(subject: str, body: str):
     """
-    Streamlit secrets expected:
+    Expected in .streamlit/secrets.toml:
 
     [smtp]
     host = "smtp.gmail.com"
     port = 587
     username = "your@gmail.com"
-    password = "16charapppassword"   # no spaces
+    password = "xxxx xxxx xxxx xxxx"   # spaces are okay; code removes them
     from_email = "your@gmail.com"
-    to_email = "target@gmail.com"    # OR JSON list string
+    to_email = "target@gmail.com"      # string OR JSON list OR list
     use_tls = true
     """
     try:
@@ -71,19 +66,23 @@ def send_mail_from_secrets(subject: str, body: str):
     host = smtp_cfg.get("host", "smtp.gmail.com")
     port = int(smtp_cfg.get("port", 587))
     username = smtp_cfg.get("username", "")
-    password = smtp_cfg.get("password", "")
+    password = _normalize_app_password(smtp_cfg.get("password", ""))
     from_email = smtp_cfg.get("from_email", username)
     use_tls = _to_bool(smtp_cfg.get("use_tls", True), default=True)
 
     to_raw = smtp_cfg.get("to_email", "")
     if isinstance(to_raw, list):
-        to_emails = to_raw
+        to_emails = [str(x).strip() for x in to_raw if str(x).strip()]
     elif isinstance(to_raw, str) and to_raw.strip().startswith("["):
-        to_emails = json.loads(to_raw)
+        parsed = json.loads(to_raw)
+        to_emails = [str(x).strip() for x in parsed if str(x).strip()]
     elif isinstance(to_raw, str) and to_raw.strip():
         to_emails = [to_raw.strip()]
     else:
         return False, "to_email is missing in secrets."
+
+    if not username or not password:
+        return False, "SMTP username/password missing in secrets."
 
     msg = EmailMessage()
     msg["Subject"] = subject
@@ -101,13 +100,20 @@ def send_mail_from_secrets(subject: str, body: str):
             server.send_message(msg)
         return True, f"Email sent to {', '.join(to_emails)}"
     except smtplib.SMTPAuthenticationError as e:
-        return False, f"SMTP auth failed (check App Password / 2FA): {e}"
+        return False, f"SMTP auth failed (check Gmail App Password / 2FA): {e}"
     except Exception as e:
         return False, f"SMTP error: {e}"
 
 
 # -----------------------------
-# App style
+# Session state
+# -----------------------------
+if "mail_sent" not in st.session_state:
+    st.session_state.mail_sent = False
+
+
+# -----------------------------
+# Global app CSS
 # -----------------------------
 st.markdown(
     """
@@ -117,58 +123,87 @@ st.markdown(
     [data-testid="stHeader"] {display: none;}
     [data-testid="stToolbar"] {display: none;}
 
-    .stApp {
-        background: linear-gradient(-45deg,#ff4d6d,#ff8fa3,#a78bfa,#60a5fa,#34d399,#f59e0b);
-        background-size: 400% 400%;
-        animation: appBgMove 14s ease infinite;
+    .stApp{
+      background: linear-gradient(-45deg,#ff4d6d,#ff8fa3,#a78bfa,#60a5fa,#34d399,#f59e0b);
+      background-size: 400% 400%;
+      animation: appBgMove 14s ease infinite;
     }
 
     @keyframes appBgMove{
-      0% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
-      100% { background-position: 0% 50%; }
+      0% {background-position: 0% 50%;}
+      50% {background-position: 100% 50%;}
+      100% {background-position: 0% 50%;}
     }
 
     .block-container{
-        max-width: 100% !important;
-        padding-top: 0.2rem !important;
-        padding-bottom: 0.4rem !important;
+      max-width: 100% !important;
+      padding-top: 0.22rem !important;
+      padding-bottom: 0.5rem !important;
     }
 
     iframe[title="streamlit_components.v1.html"]{
-        border: none !important;
-        border-radius: 12px !important;
-        background: transparent !important;
+      border: none !important;
+      border-radius: 14px !important;
+      background: transparent !important;
+    }
+
+    .ack-wrap{
+      width:min(980px, 92vw);
+      margin:-26px auto 8px auto;
+      background: rgba(255,255,255,.18);
+      border:1px solid rgba(255,255,255,.32);
+      backdrop-filter: blur(8px);
+      border-radius:16px;
+      box-shadow: 0 3px 8px rgba(0,0,0,.08);
+      padding: 10px 12px 14px 12px;
+    }
+
+    .ack-title{
+      text-align:center;
+      color:#fff;
+      font-weight:900;
+      font-size: clamp(20px, 2.1vw, 30px);
+      text-shadow:0 3px 10px rgba(0,0,0,.22);
+      margin: 2px 0;
+    }
+
+    .ack-sub{
+      text-align:center;
+      color:#fff;
+      font-weight:800;
+      text-shadow:0 2px 8px rgba(0,0,0,.22);
+      margin-bottom:10px;
+      font-size: clamp(14px, 1.6vw, 20px);
+    }
+
+    div[data-testid="stButton"] button[kind="primary"]{
+      border-radius: 14px !important;
+      font-weight: 900 !important;
+      font-size: clamp(17px, 1.8vw, 24px) !important;
+      padding: 0.72rem 1rem !important;
+      border: 0 !important;
+      color: #fff !important;
+      background: linear-gradient(135deg,#ff3b3b,#ff6b6b,#ff8e53) !important;
+      box-shadow: 0 10px 22px rgba(0,0,0,.2) !important;
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# -----------------------------
-# State & query flags
-# -----------------------------
-if "mail_sent" not in st.session_state:
-    st.session_state.mail_sent = False
-
-show_ack = _qp_get("show_ack", "") == "1"
 
 # -----------------------------
-# Main interactive UI
+# Interactive iframe content
 # -----------------------------
-html_template = r"""
+html = r"""
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <style>
-    :root{
-      --yesScale: 1;
-      --noScale: 1;
-    }
-
-    * { box-sizing: border-box; }
+    :root{ --yesScale: 1; --noScale: 1; }
+    *{ box-sizing: border-box; }
 
     body{
       margin:0;
@@ -179,38 +214,38 @@ html_template = r"""
       display:flex;
       align-items:flex-start;
       justify-content:center;
-      overflow-x: hidden;
+      overflow-x:hidden;
     }
 
     .bg-hearts{
       position: fixed;
       inset: 0;
-      pointer-events: none;
-      z-index: 0;
-      overflow: hidden;
+      pointer-events:none;
+      z-index:0;
+      overflow:hidden;
     }
 
     .bg-heart{
-      position: absolute;
-      opacity: 0;
-      animation: heartFade var(--dur, 2800ms) ease-in-out forwards;
+      position:absolute;
+      opacity:0;
+      animation: heartFade var(--dur,2800ms) ease-in-out forwards;
       filter: drop-shadow(0 2px 4px rgba(0,0,0,.12));
-      user-select: none;
+      user-select:none;
       will-change: transform, opacity;
     }
 
     @keyframes heartFade{
-      0%   { transform: translateY(8px) scale(.6); opacity: 0; }
-      12%  { opacity: .95; }
-      70%  { opacity: .78; }
-      100% { transform: translateY(-20px) scale(1.15); opacity: 0; }
+      0%{ transform:translateY(8px) scale(.6); opacity:0; }
+      12%{ opacity:.95; }
+      70%{ opacity:.78; }
+      100%{ transform:translateY(-20px) scale(1.15); opacity:0; }
     }
 
     .wrap{
       width:min(1140px, 92vw);
-      position: relative;
-      z-index: 2;
-      margin-top: 2px;
+      position:relative;
+      z-index:2;
+      margin-top:2px;
     }
 
     .hero{
@@ -219,28 +254,29 @@ html_template = r"""
       font-weight:900;
       font-size: clamp(34px, 4vw, 58px);
       text-shadow:0 3px 12px rgba(0,0,0,.20);
-      margin: 0 0 8px;
+      margin:0 0 8px;
+      line-height:1.1;
     }
 
     .card{
       background: rgba(255,255,255,.20);
       border:1px solid rgba(255,255,255,.32);
       backdrop-filter: blur(8px);
-      border-radius: 18px;
+      border-radius:18px;
       box-shadow: 0 3px 8px rgba(0,0,0,.08);
-      padding: 10px;
-      overflow: visible;
+      padding:10px;
+      overflow:visible;
     }
 
     .letter{
       background: rgba(255,255,255,.94);
-      border-radius: 14px;
-      padding: 22px 24px;
+      border-radius:14px;
+      padding:22px 24px;
       color:#2e2030;
       line-height:1.62;
       box-shadow: inset 0 0 0 1px rgba(255,255,255,.78);
-      max-width: 1080px;
-      margin: 0 auto;
+      max-width:1080px;
+      margin:0 auto;
     }
 
     .letter h2{
@@ -250,25 +286,25 @@ html_template = r"""
     }
 
     .letter p{
-      margin: 0 0 10px;
-      font-size: 17px;
+      margin:0 0 10px;
+      font-size:17px;
     }
 
     .sign{
-      margin-top: 10px;
-      font-weight: 700;
+      margin-top:10px;
+      font-weight:700;
       color:#6a2148;
-      font-size: 17px;
+      font-size:17px;
     }
 
     .status{
-      margin-top: 12px;
+      margin-top:12px;
       text-align:center;
       color:#fff;
       font-weight:800;
       font-size: clamp(16px, 1.8vw, 24px);
       text-shadow:0 2px 8px rgba(0,0,0,.22);
-      min-height: 34px;
+      min-height:34px;
     }
 
     .tiny-meme{
@@ -277,33 +313,33 @@ html_template = r"""
       opacity:1;
       font-size:12px;
       font-weight:700;
-      margin-top: 4px;
-      min-height: 18px;
+      margin-top:4px;
+      min-height:18px;
       letter-spacing:.15px;
       background: rgba(255,255,255,.68);
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 10px;
-      position: relative;
-      left: 50%;
-      transform: translateX(-50%);
+      display:inline-block;
+      padding:2px 8px;
+      border-radius:10px;
+      position:relative;
+      left:50%;
+      transform:translateX(-50%);
     }
 
     .row{
-      margin-top: 14px;
+      margin-top:14px;
       display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
+      grid-template-columns:1fr 1fr;
+      gap:12px;
       align-items:center;
-      min-height: 100px;
-      position: relative;
-      overflow: visible;
+      min-height:100px;
+      position:relative;
+      overflow:visible;
     }
 
     .row.solo{
-      grid-template-columns: 1fr;
-      max-width: 740px;
-      margin: 14px auto 0 auto;
+      grid-template-columns:1fr;
+      max-width:740px;
+      margin:14px auto 0 auto;
     }
 
     .btn{
@@ -317,40 +353,40 @@ html_template = r"""
       transition: all .22s ease;
       transform-origin:center center;
       user-select:none;
-      position: relative;
-      white-space: normal;
-      word-break: break-word;
-      text-align: center;
-      line-height: 1.2;
+      white-space:normal;
+      word-break:break-word;
+      text-align:center;
+      line-height:1.2;
     }
 
     .yes{
       background: linear-gradient(135deg,#ff2d95,#ff5e3a,#ffcc00);
-      font-size: 22px;
-      padding: 13px 24px;
+      font-size:22px;
+      padding:13px 24px;
       transform: scale(var(--yesScale));
-      z-index: 8;
+      z-index:8;
     }
 
     .no{
       background: linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899);
-      font-size: 22px;
-      padding: 13px 24px;
+      font-size:22px;
+      padding:13px 24px;
       transform: scale(var(--noScale));
       opacity: calc(.20 + (var(--noScale) * .80));
-      z-index: 3;
+      z-index:3;
     }
 
     .hide{ display:none !important; }
 
     .celebrate{
-      margin-top: 8px;
+      margin-top:8px;
       text-align:center;
       color:#fff;
       font-weight:900;
       font-size: clamp(20px, 2.2vw, 32px);
       text-shadow:0 3px 10px rgba(0,0,0,.22);
-      min-height: 38px;
+      min-height:38px;
+      line-height:1.25;
     }
 
     .float-area{
@@ -363,24 +399,24 @@ html_template = r"""
 
     .float{
       position:absolute;
-      font-size: 26px;
+      font-size:26px;
       animation: fly 1.8s ease-out forwards;
       filter: drop-shadow(0 4px 8px rgba(0,0,0,.2));
       user-select:none;
     }
 
     @keyframes fly{
-      0%   { transform: translateY(30px) scale(.7); opacity:0; }
-      10%  { opacity:1; }
-      100% { transform: translateY(-110vh) scale(1.2); opacity:0; }
+      0%{ transform:translateY(30px) scale(.7); opacity:0; }
+      10%{ opacity:1; }
+      100%{ transform:translateY(-110vh) scale(1.2); opacity:0; }
     }
 
     @media (max-width: 900px){
-      body{ padding-top: 10px; }
-      .row{ grid-template-columns: 1fr; }
-      .row.solo{ max-width: 100%; }
-      .letter{ max-width: 100%; }
-      .wrap{ width:min(1140px, 95vw); }
+      body{ padding-top:10px; }
+      .row{ grid-template-columns:1fr; }
+      .row.solo{ max-width:100%; }
+      .letter{ max-width:100%; }
+      .wrap{ width:min(1140px,95vw); }
     }
   </style>
 </head>
@@ -419,7 +455,7 @@ html_template = r"""
 
       <div id="row" class="row">
         <button id="yesBtn" class="btn yes">YES 😍</button>
-        <button id="noBtn"  class="btn no">NO 🙈</button>
+        <button id="noBtn" class="btn no">NO 🙈</button>
       </div>
 
       <div id="celebrate" class="celebrate"></div>
@@ -430,8 +466,8 @@ html_template = r"""
 
   <script>
     let noClicks = 0;
-    let hoverSwaps = 0;
-    let accepted = __ACCEPTED_INITIAL__;
+    let hoverSwaps = 0;     // first 4 hover swaps
+    let accepted = false;
     let yesOnLeft = true;
     let lastHoverTs = 0;
     let hoverTaunt = "";
@@ -485,45 +521,53 @@ html_template = r"""
       "again missed it hehe 🤭"
     ];
 
-    function yesScale(){ return Math.min(2.0, 1 + (0.16 * noClicks)); }
+    function yesScale(){
+      return Math.min(2.0, 1 + (0.16 * noClicks));
+    }
+
     function noScale(){
-      const shrinkClicks = Math.max(0, noClicks - 4);
+      const shrinkClicks = Math.max(0, noClicks - 4); // shrink starts after 4 NO clicks
       return Math.max(0.20, 1 - (0.16 * shrinkClicks));
     }
 
     function swapPositions(){
       row.innerHTML = "";
-      if (yesOnLeft){ row.appendChild(noBtn); row.appendChild(yesBtn); }
-      else { row.appendChild(yesBtn); row.appendChild(noBtn); }
+      if (yesOnLeft){
+        row.appendChild(noBtn);
+        row.appendChild(yesBtn);
+      } else {
+        row.appendChild(yesBtn);
+        row.appendChild(noBtn);
+      }
       yesOnLeft = !yesOnLeft;
     }
 
-    function floatBurst() {
+    function floatBurst(){
       const icons = ["🎈","💖","💘","✨","🥳","💕"];
-      for (let i = 0; i < 28; i++) {
+      for (let i = 0; i < 28; i++){
         const el = document.createElement("div");
         el.className = "float";
-        el.textContent = icons[Math.floor(Math.random() * icons.length)];
-        el.style.left = (Math.random() * 100) + "vw";
+        el.textContent = icons[Math.floor(Math.random()*icons.length)];
+        el.style.left = (Math.random()*100) + "vw";
         el.style.bottom = "-20px";
-        el.style.animationDelay = (Math.random() * 0.35) + "s";
-        el.style.fontSize = (18 + Math.random() * 22) + "px";
+        el.style.animationDelay = (Math.random()*0.35) + "s";
+        el.style.fontSize = (18 + Math.random()*22) + "px";
         floatArea.appendChild(el);
         setTimeout(() => el.remove(), 2200);
       }
     }
 
-    function spawnBgHeart(batchSize = 1){
+    function spawnBgHeart(batchSize=1){
       const hearts = ["💖","💘","💕","💓","💗","🫶","💞","💝"];
-      for (let i = 0; i < batchSize; i++){
+      for (let i=0; i<batchSize; i++){
         const h = document.createElement("span");
         h.className = "bg-heart";
-        h.textContent = hearts[Math.floor(Math.random() * hearts.length)];
+        h.textContent = hearts[Math.floor(Math.random()*hearts.length)];
 
-        const left = Math.random() * 100;
-        const top = Math.random() * 100;
-        const size = 10 + Math.random() * 16;
-        const dur = 1900 + Math.random() * 2200;
+        const left = Math.random()*100;
+        const top = Math.random()*100;
+        const size = 10 + Math.random()*16;
+        const dur = 1900 + Math.random()*2200;
 
         h.style.left = left + "vw";
         h.style.top = top + "vh";
@@ -536,26 +580,7 @@ html_template = r"""
     }
 
     setInterval(() => spawnBgHeart(Math.random() < 0.45 ? 2 : 1), 180);
-    for (let i = 0; i < 34; i++) setTimeout(() => spawnBgHeart(1), i * 70);
-
-    function showAckInApp() {
-      const base = (document.referrer && document.referrer.startsWith("http"))
-        ? document.referrer
-        : window.location.href;
-
-      let u;
-      try { u = new URL(base); } catch (e) { return; }
-
-      u.searchParams.set("show_ack", "1");
-      u.searchParams.set("_ts", Date.now().toString());
-
-      const a = document.createElement("a");
-      a.href = u.toString();
-      a.target = "_top";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    }
+    for (let i=0; i<34; i++) setTimeout(() => spawnBgHeart(1), i*70);
 
     function render(){
       document.documentElement.style.setProperty("--yesScale", String(yesScale()));
@@ -576,9 +601,15 @@ html_template = r"""
       } else {
         noBtn.classList.remove("hide");
         row.classList.remove("solo");
+
         row.innerHTML = "";
-        if (yesOnLeft){ row.appendChild(yesBtn); row.appendChild(noBtn); }
-        else { row.appendChild(noBtn); row.appendChild(yesBtn); }
+        if (yesOnLeft){
+          row.appendChild(yesBtn);
+          row.appendChild(noBtn);
+        } else {
+          row.appendChild(noBtn);
+          row.appendChild(yesBtn);
+        }
       }
 
       if (accepted){
@@ -624,7 +655,6 @@ html_template = r"""
       accepted = true;
       floatBurst();
       render();
-      showAckInApp();  // show native st.button after YES
     });
 
     noBtn.addEventListener("click", () => {
@@ -641,26 +671,27 @@ html_template = r"""
 </html>
 """
 
-html = html_template.replace("__ACCEPTED_INITIAL__", "true" if show_ack else "false")
-components.html(html, height=1060, scrolling=False)
+components.html(html, height=1100, scrolling=False)
 
 
 # -----------------------------
-# Native Streamlit acknowledgement button (appears only after YES)
+# Native acknowledgement button directly below iframe
 # -----------------------------
-if show_ack:
-    st.markdown("### Woooo! Valentine locked in 🥰")
-    st.caption("click here to get valintine outing date😝")
+st.markdown('<div class="ack-wrap">', unsafe_allow_html=True)
+st.markdown('<div class="ack-title">Woooo! Valentine locked in 🥰</div>', unsafe_allow_html=True)
+st.markdown('<div class="ack-sub">click here to get valintine outing date😝</div>', unsafe_allow_html=True)
 
-    if not st.session_state.mail_sent:
-        if st.button("I acknowledge ✅", type="primary", use_container_width=True):
-            subject, body = get_email_content()
-            ok, info = send_mail_from_secrets(subject, body)
-            if ok:
-                st.session_state.mail_sent = True
-                st.balloons()
-                st.success("Date mail sent successfully 💌")
-            else:
-                st.error(f"Could not send email: {info}")
-    else:
-        st.success("Date mail already sent 💖")
+if not st.session_state.mail_sent:
+    if st.button("I acknowledge ✅ Send our date email", type="primary", use_container_width=True):
+        subject, body = get_email_content()
+        ok, info = send_mail_from_secrets(subject, body)
+        if ok:
+            st.session_state.mail_sent = True
+            st.balloons()
+            st.success("Date mail sent successfully 💌")
+        else:
+            st.error(f"Could not send email: {info}")
+else:
+    st.success("Date mail already sent 💖")
+
+st.markdown("</div>", unsafe_allow_html=True)
