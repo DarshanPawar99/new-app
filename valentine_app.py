@@ -6,7 +6,7 @@ from email.message import EmailMessage
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="For Pragya 💘", page_icon="💘", layout="wide")
+st.set_page_config(page_title="Date Proposal", page_icon="💘", layout="wide")
 
 
 # -----------------------------
@@ -18,10 +18,10 @@ def get_email_content():
 
 I’m so happy you said yes. 💖
 
-I’m really sorry — because of a sudden plan, I won’t be able to take you out on the 14th.
+I’m really sorry because of a sudden plan, I won’t be able to take you out on the 14th.
 Can we make it 15 Feb instead?
 
-I want to take you on a date and do something you’ve wanted to try for sometime — your choice.
+Let go on a date and do something you’ve wanting to try for sometime.
 I’m really glad you said yes.
 
 Can’t wait for our date, Winnie 🐻
@@ -430,7 +430,7 @@ html = r"""
       <div class="letter">
         <h2>Hey Pragya,</h2>
         <p>
-          I’ll keep this simple — you’re genuinely amazing.
+          I’ll keep this simple you’re genuinely amazing.
           Your big bright eyes, your beautiful voice, and your goated personality... all of it is unreal.
           Even your cute anger (that wannabe toxic mode 😌) is somehow adorable.
         </p>
@@ -442,7 +442,7 @@ html = r"""
         <p>
           Bonus points: you’re funny, cute, smart, diligent, and hot.
           How is all that in one person?
-          Also yes — my favorite thing is your nose XD.
+          Also yes, my favorite thing is your nose and I'll continue to pull it and annoy you XD.
         </p>
         <p>
           I’d be the luckiest guy if I could make you mine forever.
@@ -615,7 +615,7 @@ html = r"""
       if (accepted){
         status.textContent = "You chose YES. Best decision ever 🤝💖";
         tinyMeme.textContent = "she said YES and my heart did cartwheels";
-        celebrate.textContent = "Woooo! Valentine locked in 🥰";
+        celebrate.textContent = "Woooo! Valentine locked in 🥰 (plz scroll below)";
       } else if (noClicks >= 7){
         status.textContent = "NO vanished... looks like fate picked YES 😌";
         tinyMeme.textContent = "resistance level = exhausted";
@@ -677,12 +677,11 @@ components.html(html, height=1100, scrolling=False)
 # -----------------------------
 # Native acknowledgement button directly below iframe
 # -----------------------------
-st.markdown('<div class="ack-wrap">', unsafe_allow_html=True)
-st.markdown('<div class="ack-title">Woooo! Valentine locked in 🥰</div>', unsafe_allow_html=True)
+
 st.markdown('<div class="ack-sub">click here to get valintine outing date😝</div>', unsafe_allow_html=True)
 
 if not st.session_state.mail_sent:
-    if st.button("I acknowledge ✅ Send our date email", type="primary", use_container_width=True):
+    if st.button("I ACKNOWLEDGE ✅ To Going Out", type="primary", use_container_width=True):
         subject, body = get_email_content()
         ok, info = send_mail_from_secrets(subject, body)
         if ok:
@@ -695,3 +694,4 @@ else:
     st.success("Date mail already sent 💖")
 
 st.markdown("</div>", unsafe_allow_html=True)
+
