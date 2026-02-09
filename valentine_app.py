@@ -442,7 +442,7 @@ html = r"""
         <p>
           Bonus points: you’re funny, cute, smart, diligent, and hot.
           How is all that in one person?
-          Also yes, my favorite thing is your nose and I'll continue to pull it and annoy you XD.
+          Also my favorite is your nose and I'll continue to pull it and annoy you😏XD.
         </p>
         <p>
           I’d be the luckiest guy if I could make you mine forever.
@@ -694,4 +694,5 @@ else:
     st.success("Date mail already sent 💖")
 
 st.markdown("</div>", unsafe_allow_html=True)
+
 
